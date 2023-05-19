@@ -22,10 +22,10 @@
 #include <utility>
 #include <vector>
 
+#include "../../third_party/libfort/lib/fort.hpp"
 #include "catalog/catalog.h"
 #include "common/config.h"
 #include "common/util/string_util.h"
-#include "libfort/lib/fort.hpp"
 #include "type/value.h"
 
 namespace bustub {
