@@ -1,14 +1,14 @@
-//===----------------------------------------------------------------------===//
+// ===----------------------------------------------------------------------===//
 //
-//                         BusTub
+//                          BusTub
 //
-// p0_trie.h
+//  p0_trie.h
 //
-// Identification: src/include/primer/p0_trie.h
+//  Identification: src/include/primer/p0_trie.h
 //
-// Copyright (c) 2015-2022, Carnegie Mellon University Database Group
+//  Copyright (c) 2015-2022, Carnegie Mellon University Database Group
 //
-//===----------------------------------------------------------------------===//
+// ===----------------------------------------------------------------------===//
 
 #pragma once
 
@@ -24,7 +24,6 @@
 #include "common/rwlatch.h"
 
 namespace bustub {
-
 /**
  * TrieNode is a generic container for any node in Trie.
  */
@@ -39,8 +38,9 @@ class TrieNode {
    * @param key_char Key character of this trie node
    */
   explicit TrieNode(char key_char) {
-    key_char_ = key_char;
-    children_.clear();
+    this->key_char_ = key_char;
+    this->is_end_ = false;
+    this->children_.clear();
   }
 
   /**
@@ -51,10 +51,11 @@ class TrieNode {
    *
    * @param other_trie_node Old trie node.
    */
+
   TrieNode(TrieNode &&other_trie_node) noexcept {
-    key_char_ = other_trie_node.key_char_;
-    is_end_ = other_trie_node.is_end_;
-    this->children_ = std::move(other_trie_node.children_);
+    this->key_char_ = other_trie_node.key_char_;
+    this->is_end_ = other_trie_node.is_end_;
+    this->children_.swap(other_trie_node.children_);
   }
 
   /**
@@ -89,7 +90,7 @@ class TrieNode {
    *
    * @return True if is_end_ flag is true, false if is_end_ is false.
    */
-  bool IsEndNode() const { return is_end_; }
+  bool IsEndNode() const { return this->is_end_; }
 
   /**
    * TODO(P0): Add implementation
@@ -98,7 +99,7 @@ class TrieNode {
    *
    * @return key_char_ of this trie node.
    */
-  char GetKeyChar() const { return key_char_; }
+  char GetKeyChar() const { return this->key_char_; }
 
   /**
    * TODO(P0): Add implementation
@@ -123,14 +124,8 @@ class TrieNode {
     if (HasChild(key_char) || key_char != child->key_char_) {
       return nullptr;
     }
-    children_[key_char] = std::move(child);
+    children_[key_char] = std::forward<std::unique_ptr<TrieNode>>(child);
     return &children_[key_char];
-    // auto result = children_.insert({key_char, std::move(child)});
-    // if(result.second)
-    // {
-    //   return &child;
-    // }
-    // else return nullptr;
   }
 
   /**
@@ -173,7 +168,7 @@ class TrieNode {
    *
    * @param is_end Whether this trie node is ending char of a key string
    */
-  void SetEndNode(bool is_end) { is_end_ = true; }
+  void SetEndNode(bool is_end) { this->is_end_ = is_end; }
 
  protected:
   /** Key character of this trie node */
@@ -186,7 +181,7 @@ class TrieNode {
 };
 
 /**
- * TrieNodeWithValue is a node that marks the ending of a key, and it can
+ * TrieNodeWithValue is a node that mark the ending of a key, and it can
  * hold a value of any type T.
  */
 template <typename T>
@@ -214,9 +209,9 @@ class TrieNodeWithValue : public TrieNode {
    * @param trieNode TrieNode whose data is to be moved to TrieNodeWithValue
    * @param value
    */
-  TrieNodeWithValue(TrieNode &&trieNode, T value) : TrieNode(std::move(trieNode)) {
-    is_end_ = true;
+  TrieNodeWithValue(TrieNode &&trieNode, T value) : TrieNode(std::forward<TrieNode>(trieNode)) {
     this->value_ = value;
+    SetEndNode(true);
   }
 
   /**
@@ -225,7 +220,7 @@ class TrieNodeWithValue : public TrieNode {
    * @brief Construct a new TrieNodeWithValue. This is used when a new terminal node is constructed.
    *
    * You should:
-   * 1) Invoke the constructor for TrieNode with the given key_char.
+   * 1) Invoke the constructor for TrieNode with given key_char.
    * 2) Set value_ for this node.
    * 3) set is_end_ to true.
    *
@@ -234,7 +229,7 @@ class TrieNodeWithValue : public TrieNode {
    */
   TrieNodeWithValue(char key_char, T value) : TrieNode(key_char) {
     this->value_ = value;
-    is_end_ = true;
+    SetEndNode(true);
   }
 
   /**
@@ -251,7 +246,7 @@ class TrieNodeWithValue : public TrieNode {
 };
 
 /**
- * Trie is a concurrent key-value store. Each key is a string and its corresponding
+ * Trie is a concurrent key-value store. Each key is string and its corresponding
  * value can be any type.
  */
 class Trie {
@@ -278,9 +273,9 @@ class Trie {
    *
    * @brief Insert key-value pair into the trie.
    *
-   * If the key is an empty string, return false immediately.
+   * If key is empty string, return false immediately.
    *
-   * If the key already exists, return false. Duplicated keys are not allowed and
+   * If key alreadys exists, return false. Duplicated keys are not allowed and
    * you should never overwrite value of an existing key.
    *
    * When you reach the ending character of a key:
@@ -289,15 +284,15 @@ class Trie {
    * 2. If the terminal node is a TrieNode, then convert it into TrieNodeWithValue by
    * invoking the appropriate constructor.
    * 3. If it is already a TrieNodeWithValue,
-   * then insertion fails and returns false. Do not overwrite existing data with new data.
+   * then insertion fails and return false. Do not overwrite existing data with new data.
    *
    * You can quickly check whether a TrieNode pointer holds TrieNode or TrieNodeWithValue
    * by checking the is_end_ flag. If is_end_ == false, then it points to TrieNode. If
    * is_end_ == true, it points to TrieNodeWithValue.
    *
-   * @param key Key used to traverse the trie and find the correct node
+   * @param key Key used to traverse the trie and find correct node
    * @param value Value to be inserted
-   * @return True if insertion succeeds, false if the key already exists
+   * @return True if insertion succeeds, false if key already exists
    */
   template <typename T>
   bool Insert(const std::string &key, T value) {
@@ -358,14 +353,14 @@ class Trie {
    * 1) Find the terminal node for the given key.
    * 2) If this terminal node does not have any children, remove it from its
    * parent's children_ map.
-   * 3) Recursively remove nodes that have no children and are not terminal node
+   * 3) Recursively remove nodes that have no children and is not terminal node
    * of another key.
    *
-   * @param key Key used to traverse the trie and find the correct node
-   * @return True if the key exists and is removed, false otherwise
+   * @param key Key used to traverse the trie and find correct node
+   * @return True if key exists and is removed, false otherwise
    */
-
   bool Remove(const std::string &key) {
+    // 为空返回
     if (key.empty()) {
       return false;
     }
@@ -411,7 +406,7 @@ class Trie {
    * @brief Get the corresponding value of type T given its key.
    * If key is empty, set success to false.
    * If key does not exist in trie, set success to false.
-   * If the given type T is not the same as the value type stored in TrieNodeWithValue
+   * If given type T is not the same as the value type stored in TrieNodeWithValue
    * (ie. GetValue<int> is called but terminal node holds std::string),
    * set success to false.
    *
@@ -419,12 +414,13 @@ class Trie {
    * the terminal TrieNode to TrieNodeWithValue<T>. If the casted result
    * is not nullptr, then type T is the correct type.
    *
-   * @param key Key used to traverse the trie and find the correct node
+   * @param key Key used to traverse the trie and find correct node
    * @param success Whether GetValue is successful or not
    * @return Value of type T if type matches
    */
   template <typename T>
   T GetValue(const std::string &key, bool *success) {
+    // 这个初始化很重要，如果没有找到就直接返回 false,卡这里好久
     *success = false;
     latch_.RLock();
 
@@ -438,8 +434,10 @@ class Trie {
         *success = false;
         break;
       }
-
+      // 若是目标尾节点，返回值
+      // 这里犯了个错，并非只要是 end 节点就是所需要的节点，key也得对，所以要 key == end 时
       if (next_node->get()->IsEndNode() && c == key.end()) {
+        // 若所需要类型和存储的类型不同也失败
         auto flag_node = dynamic_cast<TrieNodeWithValue<T> *>(next_node->get());
         if (!flag_node) {
           *success = false;
@@ -449,10 +447,11 @@ class Trie {
         latch_.RUnlock();
         return flag_node->GetValue();
       }
+      // 切换到下个
       pre_child = next_node;
     }
     latch_.RUnlock();
     return {};
   }
 };
-}  // namespace bustub
+}  //  namespace bustub
