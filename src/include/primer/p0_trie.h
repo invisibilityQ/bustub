@@ -16,6 +16,7 @@
 #include <stack>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -69,12 +70,7 @@ class TrieNode {
    * @param key_char Key char of child node.
    * @return True if this trie node has a child with given key, false otherwise.
    */
-  bool HasChild(char key_char) const {
-    if (children_.count(key_char) == 1)
-      return true;
-    else
-      return false;
-  }
+  bool HasChild(char key_char) const { return children_.find(key_char) != children_.end(); }
 
   /**
    * TODO(P0): Add implementation
@@ -148,10 +144,11 @@ class TrieNode {
    *         node does not exist.
    */
   std::unique_ptr<TrieNode> *GetChildNode(char key_char) {
-    if (children_.find(key_char) == children_.end()) {
-      return nullptr;
-    } else
-      return &children_[key_char];
+    auto node = children_.find(key_char);
+    if (node != children_.end()) {
+      return &(node->second);
+    }
+    return nullptr;
   }
 
   /**
@@ -163,10 +160,10 @@ class TrieNode {
    * @param key_char Key char of child node to be removed
    */
   void RemoveChildNode(char key_char) {
-    if (children_.find(key_char) == children_.end())
-      return;
-    else
+    auto node = children_.find(key_char);
+    if (node != children_.end()) {
       children_.erase(key_char);
+    }
   }
 
   /**
@@ -304,40 +301,50 @@ class Trie {
    */
   template <typename T>
   bool Insert(const std::string &key, T value) {
-    if (key.empty()) return false;
-    latch_.WLock();  // 插入时，写锁lock
-    auto node = &root_;
-    if (key.size() > 1) {
-      for (auto ch : key.substr(0, key.size() - 1)) {
-        auto child = node->get()->GetChildNode(ch);
-        if (child == nullptr) child = node->get()->InsertChildNode(ch, std::make_unique<TrieNode>(ch));
-        // std::unique_ptr<TrieNode> *InsertChildNode(char key_char, std::unique_ptr<TrieNode> &&child)
-        node = child;
+    if (key.empty()) {
+      return false;
+    }
+    latch_.WLock();
+    auto c = key.begin();
+    auto pre_child = &root_;
+    while (c != key.end()) {
+      auto cur = c++;
+      // 若当前节点将为 end 节点，跳出循环进行特殊处理
+      if (c == key.end()) {
+        break;
+      }
+
+      // 如果该字符不存在 则直接创建
+      if (!pre_child->get()->HasChild(*cur)) {
+        pre_child = pre_child->get()->InsertChildNode(*cur, std::make_unique<TrieNode>(*cur));
+      } else {
+        // 存在则直接跳过
+        pre_child = pre_child->get()->GetChildNode(*cur);
       }
     }
-    // 到倒数第二个字符
-    bool ret = false;
-    char ch = key[key.size() - 1];
-    auto terminal_node = node->get()->GetChildNode(ch);  // 判断最后一个是不是倒数第二个的子节点
-    if (terminal_node == nullptr)                        //
-    {
-      node->get()->InsertChildNode(ch, std::make_unique<TrieNodeWithValue<T>>(ch, value));
-      ret = true;
-    } else if (!terminal_node->get()->IsEndNode())  // 不是叶子节点
-    {
-      auto new_node_terminal = new TrieNodeWithValue<T>(std::move(*(terminal_node->get())), value);
-      // 创建一个新的TrieNodeWithValue<T>类型的对象，
-      // 并将terminal_node指向的对象的值转移到该对象的构造函数中，同时传递value作为另一个参数。
-      // 如果相应节点存在但不是终结节点（通过 is_end_ 判断）
-      // 将其转化为 TrieNodeWithValue 并把值赋给该节点
-      // 该操作不破坏以该键为前缀的后续其它节点（children_ 不变），插入成功
-      terminal_node->reset(new_node_terminal);
-      ret = true;
-    } else {  // 如果相应节点存在且是终结节点，说明该键在 Trie 树存在，规定不能覆盖已存在的值，返回插入失败
-      ret = false;
+
+    // 此时c为end 退回一个
+    c--;
+
+    auto end_node = pre_child->get()->GetChildNode(*c);
+    // 若最后一个节点存在，且已经为 end 则插入失败
+    if (end_node != nullptr && end_node->get()->IsEndNode()) {
+      latch_.WUnlock();
+      return false;
     }
+    // 若最后一个节点存在，且不为 end 则转为 TrieNodeWithValue
+    if (end_node != nullptr) {
+      auto new_node = new TrieNodeWithValue(std::move(**end_node), value);
+      end_node->reset(new_node);
+      latch_.WUnlock();
+      return true;
+    }
+    //  节点不存在，则直接插入
+    pre_child = pre_child->get()->InsertChildNode(*c, std::make_unique<TrieNode>(*c));
+    auto new_node = new TrieNodeWithValue(std::move(**pre_child), value);
+    pre_child->reset(new_node);
     latch_.WUnlock();
-    return ret;
+    return true;
   }
 
   /**
