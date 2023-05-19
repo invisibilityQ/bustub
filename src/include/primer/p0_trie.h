@@ -13,12 +13,12 @@
 #pragma once
 
 #include <memory>
+#include <stack>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
 #include "common/exception.h"
 #include "common/rwlatch.h"
 
@@ -37,7 +37,7 @@ class TrieNode {
    *
    * @param key_char Key character of this trie node
    */
-  explicit TrieNode(char key_char) { 
+  explicit TrieNode(char key_char) {
     key_char_ = key_char;
     children_.clear();
   }
@@ -70,9 +70,11 @@ class TrieNode {
    * @return True if this trie node has a child with given key, false otherwise.
    */
   bool HasChild(char key_char) const {
-    if(children_.count(key_char)==1) return true;
-    else return false;
-   }
+    if (children_.count(key_char) == 1)
+      return true;
+    else
+      return false;
+  }
 
   /**
    * TODO(P0): Add implementation
@@ -121,19 +123,19 @@ class TrieNode {
    * @param child Unique pointer created for the child node. This should be added to children_ map.
    * @return Pointer to unique_ptr of the inserted child node. If insertion fails, return nullptr.
    */
-  std::unique_ptr<TrieNode> *InsertChildNode(char key_char, std::unique_ptr<TrieNode> &&child) { 
-            if(HasChild(key_char) || key_char != child -> key_char_) {
-              return nullptr;
-            }
-            children_[key_char] = std::move(child);
-            return &children_[key_char];
-            // auto result = children_.insert({key_char, std::move(child)});
-            // if(result.second)
-            // {
-            //   return &child;
-            // }
-            // else return nullptr;
-   }
+  std::unique_ptr<TrieNode> *InsertChildNode(char key_char, std::unique_ptr<TrieNode> &&child) {
+    if (HasChild(key_char) || key_char != child->key_char_) {
+      return nullptr;
+    }
+    children_[key_char] = std::move(child);
+    return &children_[key_char];
+    // auto result = children_.insert({key_char, std::move(child)});
+    // if(result.second)
+    // {
+    //   return &child;
+    // }
+    // else return nullptr;
+  }
 
   /**
    * TODO(P0): Add implementation
@@ -145,13 +147,12 @@ class TrieNode {
    * @return Pointer to unique_ptr of the child node, nullptr if child
    *         node does not exist.
    */
-  std::unique_ptr<TrieNode> *GetChildNode(char key_char) { 
-    if(children_.find(key_char)==children_.end())
-    {
+  std::unique_ptr<TrieNode> *GetChildNode(char key_char) {
+    if (children_.find(key_char) == children_.end()) {
       return nullptr;
-    }
-    else return &children_[key_char];
-   }
+    } else
+      return &children_[key_char];
+  }
 
   /**
    * TODO(P0): Add implementation
@@ -161,10 +162,11 @@ class TrieNode {
    *
    * @param key_char Key char of child node to be removed
    */
-  void RemoveChildNode(char key_char) { 
-    if(children_.find(key_char)==children_.end())
-       return ;
-    else children_.erase(key_char);
+  void RemoveChildNode(char key_char) {
+    if (children_.find(key_char) == children_.end())
+      return;
+    else
+      children_.erase(key_char);
   }
 
   /**
@@ -174,7 +176,7 @@ class TrieNode {
    *
    * @param is_end Whether this trie node is ending char of a key string
    */
-  void SetEndNode(bool is_end) { is_end_=true;}
+  void SetEndNode(bool is_end) { is_end_ = true; }
 
  protected:
   /** Key character of this trie node */
@@ -215,7 +217,7 @@ class TrieNodeWithValue : public TrieNode {
    * @param trieNode TrieNode whose data is to be moved to TrieNodeWithValue
    * @param value
    */
-  TrieNodeWithValue(TrieNode &&trieNode, T value): TrieNode(std::move(trieNode)){
+  TrieNodeWithValue(TrieNode &&trieNode, T value) : TrieNode(std::move(trieNode)) {
     is_end_ = true;
     this->value_ = value;
   }
@@ -303,41 +305,39 @@ class Trie {
   template <typename T>
   bool Insert(const std::string &key, T value) {
     if (key.empty()) return false;
-            latch_.WLock(); //插入时，写锁lock
-            auto node = &root_;
-            if(key.size()>1) {
-                for (auto ch : key.substr(0, key.size() - 1)) {
-                    auto child = node->get()->GetChildNode(ch);
-                    if (child == nullptr)
-                        child = node->get()->InsertChildNode(ch, std::make_unique<TrieNode>(ch));
-                    //std::unique_ptr<TrieNode> *InsertChildNode(char key_char, std::unique_ptr<TrieNode> &&child)
-                    node = child;
-                }
-            }
-            //到倒数第二个字符
-            bool ret=false;
-            char ch = key[key.size() - 1];
-            auto terminal_node = node->get()->GetChildNode(ch); //判断最后一个是不是倒数第二个的子节点
-            if (terminal_node == nullptr)  //
-            {
-                node->get()->InsertChildNode(ch, std::make_unique<TrieNodeWithValue<T>>(ch, value));
-                ret=true;
-            } else if (!terminal_node->get()->IsEndNode())  // 不是叶子节点
-            {
-                auto new_node_terminal = new TrieNodeWithValue<T>(std::move(*(terminal_node->get())), value);
-                // 创建一个新的TrieNodeWithValue<T>类型的对象，
-                // 并将terminal_node指向的对象的值转移到该对象的构造函数中，同时传递value作为另一个参数。
-                // 如果相应节点存在但不是终结节点（通过 is_end_ 判断）
-                // 将其转化为 TrieNodeWithValue 并把值赋给该节点
-                // 该操作不破坏以该键为前缀的后续其它节点（children_ 不变），插入成功
-                terminal_node->reset(new_node_terminal);
-                ret=true;
-            } else {  // 如果相应节点存在且是终结节点，说明该键在 Trie 树存在，规定不能覆盖已存在的值，返回插入失败
-                ret= false;
-            }
-            latch_.WUnlock();
-            return ret;
- 
+    latch_.WLock();  // 插入时，写锁lock
+    auto node = &root_;
+    if (key.size() > 1) {
+      for (auto ch : key.substr(0, key.size() - 1)) {
+        auto child = node->get()->GetChildNode(ch);
+        if (child == nullptr) child = node->get()->InsertChildNode(ch, std::make_unique<TrieNode>(ch));
+        // std::unique_ptr<TrieNode> *InsertChildNode(char key_char, std::unique_ptr<TrieNode> &&child)
+        node = child;
+      }
+    }
+    // 到倒数第二个字符
+    bool ret = false;
+    char ch = key[key.size() - 1];
+    auto terminal_node = node->get()->GetChildNode(ch);  // 判断最后一个是不是倒数第二个的子节点
+    if (terminal_node == nullptr)                        //
+    {
+      node->get()->InsertChildNode(ch, std::make_unique<TrieNodeWithValue<T>>(ch, value));
+      ret = true;
+    } else if (!terminal_node->get()->IsEndNode())  // 不是叶子节点
+    {
+      auto new_node_terminal = new TrieNodeWithValue<T>(std::move(*(terminal_node->get())), value);
+      // 创建一个新的TrieNodeWithValue<T>类型的对象，
+      // 并将terminal_node指向的对象的值转移到该对象的构造函数中，同时传递value作为另一个参数。
+      // 如果相应节点存在但不是终结节点（通过 is_end_ 判断）
+      // 将其转化为 TrieNodeWithValue 并把值赋给该节点
+      // 该操作不破坏以该键为前缀的后续其它节点（children_ 不变），插入成功
+      terminal_node->reset(new_node_terminal);
+      ret = true;
+    } else {  // 如果相应节点存在且是终结节点，说明该键在 Trie 树存在，规定不能覆盖已存在的值，返回插入失败
+      ret = false;
+    }
+    latch_.WUnlock();
+    return ret;
   }
 
   /**
@@ -358,38 +358,45 @@ class Trie {
    * @return True if the key exists and is removed, false otherwise
    */
 
-bool Remove(const std::string &key) { 
-  if (key.empty()) return false;
-  latch_.WLock();
-  std::unique_ptr<TrieNode> *node = &root_;
-  std::vector<std::unique_ptr<TrieNode> *> traversal_path;
-  for (auto ch : key) {
-      traversal_path.emplace_back(node);
-      auto child = node->get()->GetChildNode(ch);
-      if (child == nullptr) {  // 没有该映射
-          latch_.WUnlock();
-          return false;
-       }
-       node = child;
-   }
-  if (node->get()->HasChildren())  // 没有到达叶子节点位置 说明她是某个字符串的前缀
-       node->get()->SetEndNode(false);
-   else {  // 回溯删除相应的映射
-      for (int i = traversal_path.size() - 1; i >= 0; --i) {
-           auto pre = traversal_path[i];
-           if (node->get()->IsEndNode() || node->get()->HasChildren())
-              // 如果是，则表示当前 Trie 树节点不应该被删除，因为它可能是其他单词的前缀节点，
-              //  或者它的子节点可能是其他单词的结束节点。
-              //  所以在回溯删除相应的映射时，如果当前 Trie 树节点满足这两个条件之一，会跳出循环，
-              //  不执行删除操作，以保留这个节点。
-              break;  // if the key exists and is removed
-            pre->get()->RemoveChildNode(key[i]);
-            node = pre;
-           }
-       }
-   latch_.WUnlock();
-   return true;
-}
+  bool Remove(const std::string &key) {
+    if (key.empty()) {
+      return false;
+    }
+    latch_.WLock();
+    // 含义为，第二个元素 TrieNode 需要删除 keyChar 等于第一个元素的节点
+    std::stack<std::tuple<char, std::unique_ptr<TrieNode> *>> s;
+    auto c = key.begin();
+    auto pre_child = &root_;
+    while (c != key.end()) {
+      auto cur = c++;
+      if (pre_child->get()->HasChild(*cur)) {
+        s.push(std::make_tuple(*cur, pre_child));
+        // 到下一个 key
+        pre_child = pre_child->get()->GetChildNode(*cur);
+        continue;
+      }
+      // 存在key没有的现象
+      latch_.WUnlock();
+      return false;
+    }
+
+    // 开始删除
+    while (!s.empty()) {
+      std::tuple<char, std::unique_ptr<TrieNode> *> temp = s.top();
+      s.pop();
+      auto key = std::get<0>(temp);
+      auto del_node = std::get<1>(temp);
+      // 若被删除的节点没有孩子，则可以直接删除
+      auto flag = (*del_node)->GetChildNode(key);
+      if (flag != nullptr && (*flag)->HasChildren()) {
+        continue;
+      }
+      (*del_node)->RemoveChildNode(key);
+    }
+    latch_.WUnlock();
+
+    return true;
+  }
 
   /**
    * TODO(P0): Add implementation
@@ -417,28 +424,28 @@ bool Remove(const std::string &key) {
     auto pre_child = &root_;
     auto c = key.begin();
     while (c != key.end()) {
-        auto cur = c++;
-        auto next_node = pre_child->get()->GetChildNode(*cur);
+      auto cur = c++;
+      auto next_node = pre_child->get()->GetChildNode(*cur);
 
-        if (!next_node) {
-            *success = false;
-            break;
-        }
+      if (!next_node) {
+        *success = false;
+        break;
+      }
 
-        if (next_node->get()->IsEndNode() && c == key.end()) {
-            auto flag_node = dynamic_cast<TrieNodeWithValue<T> *>(next_node->get());
-            if (!flag_node) {
-                *success = false;
-                break;
-            }
-            *success = true;
-            latch_.RUnlock();
-            return flag_node->GetValue();
+      if (next_node->get()->IsEndNode() && c == key.end()) {
+        auto flag_node = dynamic_cast<TrieNodeWithValue<T> *>(next_node->get());
+        if (!flag_node) {
+          *success = false;
+          break;
         }
-        pre_child = next_node;
+        *success = true;
+        latch_.RUnlock();
+        return flag_node->GetValue();
+      }
+      pre_child = next_node;
     }
     latch_.RUnlock();
     return {};
-}
+  }
 };
 }  // namespace bustub
