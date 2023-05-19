@@ -25,7 +25,7 @@
 #include "catalog/catalog.h"
 #include "common/config.h"
 #include "common/util/string_util.h"
-// #include "libfort/lib/fort.hpp"
+#include "libfort/lib/fort.hpp"
 #include "type/value.h"
 
 namespace bustub {
