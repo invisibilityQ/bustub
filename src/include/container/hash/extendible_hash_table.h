@@ -76,6 +76,7 @@ class ExtendibleHashTable : public HashTable<K, V> {
    * @return True if the key is found, false otherwise.
    */
   auto Find(const K &key, V &value) -> bool override;
+  // 自加函数
 
   /**
    *
@@ -92,6 +93,7 @@ class ExtendibleHashTable : public HashTable<K, V> {
    * @param key The key to be inserted.
    * @param value The value to be inserted.
    */
+  void Grow();
   void Insert(const K &key, const V &value) override;
 
   /**
