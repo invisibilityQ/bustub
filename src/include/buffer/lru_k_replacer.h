@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include <fstream>
+#include <iostream>
 #include <limits>
 #include <list>
 #include <mutex>  // NOLINT
@@ -70,6 +72,15 @@ class LRUKReplacer {
    * @param[out] frame_id id of frame that is evicted.
    * @return true if a frame is evicted successfully, false if no frames can be evicted.
    */
+  // *@brief 找到具有最大后向 k 距离的帧并驱逐该帧。 只有标记为“可驱逐”的帧才是驱逐的候选者。
+  // *
+  // * 具有少于 k 个历史参考的帧被赋予 +inf 作为其向后 k 距离。 如果多个帧具有 inf 后向 k
+  // 距离，则整体驱逐具有最早时间戳的帧。
+  // *
+  // * 框架的成功驱逐应该减少替换器的大小并删除框架的访问历史记录。
+  // *
+  // * @param[out] 被逐出的帧的 frame_id id。
+  // * @return 如果帧被成功驱逐则为真，如果没有帧可以被驱逐则为假。
   auto Evict(frame_id_t *frame_id) -> bool;
 
   /**
@@ -83,6 +94,14 @@ class LRUKReplacer {
    *
    * @param frame_id id of frame that received a new access.
    */
+  // @brief 记录在当前时间戳访问给定帧ID的事件。
+  //   * 如果以前没有看到帧 ID，则为访问历史创建一个新条目。
+  //   *
+  //   * 如果帧 ID 无效（即大于 replacer_size_），则抛出异常。 你可以
+  //   * 如果帧 ID 无效，也使用 BUSTUB_ASSERT 中止进程。
+  //   *
+  //   * @param frame_id 接收到新访问的帧的 id。
+  //   */
   void RecordAccess(frame_id_t frame_id);
 
   /**
@@ -102,6 +121,19 @@ class LRUKReplacer {
    * @param frame_id id of frame whose 'evictable' status will be modified
    * @param set_evictable whether the given frame is evictable or not
    */
+  // @brief 切换框架是可驱逐的还是不可驱逐的。 这个功能还有
+  //   * 控制替换器的大小。 请注意，大小等于可驱逐条目的数量。
+  //   *
+  //   * 如果一个框架以前是可回收的并且要设置为不可回收的，那么大小应该递减。
+  //   如果一个框架以前是不可回收的并且将被设置为可回收的，那么大小应该增加。
+  //   *
+  //   * 如果 frame id 无效，则抛出异常或中止进程。
+  //   *
+  //   * 对于其他场景，这个函数应该在不修改任何东西的情况下终止。
+  //   *
+  //   * @param frame_id 帧的id，其“可退出”状态将被修改
+  //   * @param set_evictable 给定的帧是否可驱逐
+  //   */
   void SetEvictable(frame_id_t frame_id, bool set_evictable);
 
   /**
@@ -136,10 +168,17 @@ class LRUKReplacer {
   // TODO(student): implement me! You can replace these member variables as you like.
   // Remove maybe_unused if you start using them.
   [[maybe_unused]] size_t current_timestamp_{0};
-  [[maybe_unused]] size_t curr_size_{0};
-  [[maybe_unused]] size_t replacer_size_;
-  [[maybe_unused]] size_t k_;
+  size_t curr_size_{0};
+  size_t replacer_size_;
+  std::unordered_map<frame_id_t, size_t> access_count_;
+  std::list<frame_id_t> history_list_;
+  std::unordered_map<frame_id_t, std::list<frame_id_t>::iterator> history_map_;
+
+  std::list<frame_id_t> cache_list_;
+  std::unordered_map<frame_id_t, std::list<frame_id_t>::iterator> cache_map_;
+
+  std::unordered_map<frame_id_t, bool> is_evictable_;
+  size_t k_;
   std::mutex latch_;
 };
-
 }  // namespace bustub

@@ -80,60 +80,54 @@ auto ExtendibleHashTable<K, V>::Remove(const K &key) -> bool {
 }
 
 template <typename K, typename V>
+void ExtendibleHashTable<K, V>::Grow() {
+  int capacity = dir_.size();
+  dir_.resize(capacity << 1);
+  for (int i = 0; i < capacity; i++) {  // 调整索引
+    dir_[i + capacity] = dir_[i];
+  }
+  global_depth_++;
+}
+
+template <typename K, typename V>
 void ExtendibleHashTable<K, V>::Insert(const K &key, const V &value) {
   std::scoped_lock<std::mutex> lock(latch_);
-  // 先保存着 ，待会随着深度变化，再次调用结果可能会不一致
-  auto index = IndexOf(key);
-  auto bucket = dir_[index];
-  // 有剩余空间则直接插入
-  if (bucket->Insert(key, value)) {
-    // 这里是唯一正确的出口
-    return;
-  }
-  // 开始重整
-  // 若局部深度等于全局深度，则更新全局深度与目录容量
-  if (bucket->GetDepth() == GetGlobalDepthInternal()) {
-    size_t len = dir_.size();
-    dir_.reserve(2 * len);
-    std::copy_n(dir_.begin(), len, std::back_inserter(dir_));
-    global_depth_++;
-  }
-  // 莫名其妙到这里 item 失效了 原来是 vec 的自动扩容，导致本来的地址不能用了要重新获取 bucket, index
-  // 也会变，要用之前的
-  bucket = dir_[index];
-  // 若局部深度小于全局深度，则更新局部深度并拿个新 Bucket 用
-  if (bucket->GetDepth() < GetGlobalDepthInternal()) {
-    // 开始分裂
-    auto bucket0 = std::make_shared<Bucket>(bucket_size_, bucket->GetDepth() + 1);
-    auto bucket1 = std::make_shared<Bucket>(bucket_size_, bucket->GetDepth() + 1);
+  while (dir_[IndexOf(key)]->IsFull()) {  // 需要递归判断是否能将要插入的桶是否为满
+    size_t index = IndexOf(key);
+    auto target_bucket = dir_[index];
+    int bucket_localdepth = target_bucket->GetDepth();
+    if (global_depth_ == bucket_localdepth) {
+      Grow();
+    }
+    int mask = 1 << bucket_localdepth;
+    // 声明两个桶，废除原来目录中指向的那个桶。
+    auto bucket_0 = std::make_shared<Bucket>(bucket_size_, bucket_localdepth + 1);
+    auto bucket_1 = std::make_shared<Bucket>(bucket_size_, bucket_localdepth + 1);
+    // 重新调整桶中数据
+    for (auto &item : target_bucket->GetItems()) {
+      size_t hash_key = std::hash<K>()(item.first);
+      if ((hash_key & mask) != 0U) {
+        bucket_1->Insert(item.first, item.second);
+      } else {
+        bucket_0->Insert(item.first, item.second);
+      }
+    }
     num_buckets_++;
-    // 点睛之笔 比如 当前深度为 1，你不可能 把 1 左移 1位去判别兄弟节点，你应该把有效位的最后一位拿来
-    int mask = 1 << bucket->GetDepth();
-    for (auto &[k, v] : bucket->GetItems()) {
-      size_t hashkey = std::hash<K>()(k);
-      // 根据本地深度表示的有效位最后一位判别，若为 1，插入新建的那个bucket
-      if ((hashkey & mask) != 0) {
-        bucket1->Insert(k, v);
-      } else {
-        // 根据本地深度表示的有效位最后一位判别，若为 0，插入原有的 bucket
-        bucket0->Insert(k, v);
+    // 调整桶中数据
+    for (size_t i = 0; i < dir_.size(); i++) {
+      if (dir_[i] == target_bucket) {
+        if ((i & mask) == 0U) {
+          dir_[i] = bucket_0;
+        } else {
+          dir_[i] = bucket_1;
+        }
       }
     }
-    // 减少不必要的遍历，从前一位的大小开始，若是 0 则从 0 开始 ，若是 1 ，则可以节省很多，兄弟节点这一位肯定是一样的
-    for (size_t i = index & (mask - 1); i < dir_.size(); i += mask) {
-      // 根据本地深度表示的有效位最后一位判别，若为 1，取代新建的那个bucket
-      if ((i & mask) != 0) {
-        dir_[i] = bucket1;
-      } else {
-        // 根据本地深度表示的有效位最后一位判别，若为 0，取代原有的 bucket
-        dir_[i] = bucket0;
-      }
-    }
-    latch_.unlock();
-    // 递归插入本来要插入的值
-    Insert(key, value);
-    latch_.lock();
   }
+  // 将数据插入桶中
+  auto index = IndexOf(key);
+  auto target_bucket = dir_[index];
+  target_bucket->Insert(key, value);
 }
 
 //===--------------------------------------------------------------------===//
